@@ -7,73 +7,132 @@ namespace HoloToolkit.Unity
 {
     public enum PivotAxis
     {
-        // Rotate about all axes.
-        Free,
+        // Most common options, preserving current functionality with the same enum order.
+        XY,
+        Y,
         // Rotate about an individual axis.
         X,
-        Y
+        Z,
+        // Rotate about a pair of axes.
+        XZ,
+        YZ,
+        // Rotate about all axes.
+        Free
     }
 
     /// <summary>
-    /// The Billboard class implements the behaviors needed to keep a GameObject
-    /// oriented towards the user.
+    /// The Billboard class implements the behaviors needed to keep a GameObject oriented towards the user.
     /// </summary>
     public class Billboard : MonoBehaviour
     {
         /// <summary>
         /// The axis about which the object will rotate.
         /// </summary>
-        [Tooltip("Specifies the axis about which the object will rotate (Free rotates about both X and Y).")]
-        public PivotAxis PivotAxis = PivotAxis.Free;
+        [Tooltip("Specifies the axis about which the object will rotate.")]
+        [SerializeField]
+        private PivotAxis pivotAxis = PivotAxis.XY;
+        public PivotAxis PivotAxis
+        {
+            get { return pivotAxis; }
+            set { pivotAxis = value; }
+        }
 
         /// <summary>
-        /// Overrides the cached value of the GameObject's default rotation.
+        /// The target we will orient to. If no target is specified, the main camera will be used.
         /// </summary>
-        public Quaternion DefaultRotation { get; private set; }
-
-        private void Awake()
+        [Tooltip("Specifies the target we will orient to. If no target is specified, the main camera will be used.")]
+        [SerializeField]
+        private Transform targetTransform;
+        public Transform TargetTransform
         {
-            // Cache the GameObject's default rotation.
-            DefaultRotation = gameObject.transform.rotation;
+            get { return targetTransform; }
+            set { targetTransform = value; }
+        }
+
+        private void OnEnable()
+        {
+            if (TargetTransform == null)
+            {
+                if (CameraCache.Main != null)
+                {
+                    TargetTransform = CameraCache.Main.transform;
+                }
+            }
         }
 
         /// <summary>
         /// Keeps the object facing the camera.
         /// </summary>
-        private void Update()
+        private void LateUpdate()
         {
-            // Get a Vector that points from the Camera to the target.
-            Vector3 forward;
-            Vector3 up;
+            if (TargetTransform == null)
+            {
+                if (CameraCache.Main != null)
+                {
+                    TargetTransform = CameraCache.Main.transform;
+                }
+                else
+                {
+                    return;
+                }
+            }
 
-            // Adjust for the pivot axis. We need a forward and an up for use with Quaternion.LookRotation
+            // Get a Vector that points from the target to the main camera.
+            Vector3 directionToTarget = TargetTransform.position - transform.position;
+
+            bool useCameraAsUpVector = true;
+
+            // Adjust for the pivot axis.
             switch (PivotAxis)
             {
-                // If we're fixing one axis, then we're projecting the camera's forward vector onto
-                // the plane defined by the fixed axis and using that as the new forward.
                 case PivotAxis.X:
-                    Vector3 right = transform.right; // Fixed right
-                    forward = Vector3.ProjectOnPlane(Camera.main.transform.forward, right).normalized;
-                    up = Vector3.Cross(forward, right); // Compute the up vector
+                    directionToTarget.x = 0.0f;
+                    useCameraAsUpVector = false;
                     break;
 
                 case PivotAxis.Y:
-                    up = transform.up; // Fixed up
-                    forward = Vector3.ProjectOnPlane(Camera.main.transform.forward, up).normalized;
+                    directionToTarget.y = 0.0f;
+                    useCameraAsUpVector = false;
                     break;
 
-                // If the axes are free then we're simply aligning the forward and up vectors
-                // of the object with those of the camera. 
+                case PivotAxis.Z:
+                    directionToTarget.x = 0.0f;
+                    directionToTarget.y = 0.0f;
+                    break;
+
+                case PivotAxis.XY:
+                    useCameraAsUpVector = false;
+                    break;
+
+                case PivotAxis.XZ:
+                    directionToTarget.x = 0.0f;
+                    break;
+
+                case PivotAxis.YZ:
+                    directionToTarget.y = 0.0f;
+                    break;
+
                 case PivotAxis.Free:
                 default:
-                    forward = Camera.main.transform.forward;
-                    up = Camera.main.transform.up;
+                    // No changes needed.
                     break;
             }
 
+            // If we are right next to the camera the rotation is undefined. 
+            if (directionToTarget.sqrMagnitude < 0.001f)
+            {
+                return;
+            }
 
             // Calculate and apply the rotation required to reorient the object
-            transform.rotation = Quaternion.LookRotation(forward, up);
+            if (useCameraAsUpVector)
+            {
+                transform.rotation = Quaternion.LookRotation(-directionToTarget, CameraCache.Main.transform.up);
+            }
+            else
+            {
+                transform.rotation = Quaternion.LookRotation(-directionToTarget);
+            }
         }
     }
 }
